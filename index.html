@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer de Apostas</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background-color: #2c3e50; color: #ecf0f1; }
+        .main-container { background-color: #34495e; border-radius: 10px; padding: 20px; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        h1, h2, h3 { text-align: center; color: #f1c40f; }
+        button { cursor: pointer; padding: 10px 20px; border: none; border-radius: 5px; font-weight: bold; transition: all 0.3s; }
+        input { padding: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #7f8c8d; }
+        .action-button { background-color: #f1c40f; color: #34495e; font-size: 16px; }
+        .action-button:disabled { background-color: #a89349; color: #555; cursor: not-allowed; }
+        
+        /* Telas */
+        #game-wrapper { display: none; }
+        #lobby-screen { display: block; }
+        
+        /* Lobby */
+        .lobby-container { text-align: center; padding: 30px; background-color: #2c3e50; border-radius: 8px; }
+        .lobby-box { margin-bottom: 25px; }
+        .lobby-box input { margin: 0 10px; width: 200px; }
+        
+        /* Jogo */
+        #lobby-info { padding: 15px; background-color: #2c3e50; border-radius: 8px; margin-bottom: 20px; }
+        #player-list { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; list-style: none; padding: 0; }
+        #player-list li { background-color: #3498db; padding: 8px 15px; border-radius: 15px; font-size: 14px; }
+        .player-balance { font-weight: bold; color: #2ecc71; margin-left: 8px; }
+
+        /* Jogo de Dados */
+        #dice-game { padding: 20px; text-align: center; background-color: #1a252f; border-radius: 8px; }
+        #game-status { font-size: 24px; min-height: 40px; }
+        #bet-controls { margin: 15px 0; }
+        #results-area { min-height: 100px; margin-top: 20px; }
+        .roll-result { margin: 5px; font-size: 1.2em; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div id="lobby-screen">
+            <h1>Bem-vindo ao Jogo de Apostas</h1>
+            <div class="lobby-container">
+                 <div class="lobby-box">
+                    <input type="text" id="player-name-input" placeholder="Digite seu nome" maxlength="15">
+                </div>
+                <div class="lobby-box">
+                    <h2>Entrar em um Lobby</h2>
+                    <input type="text" id="join-code-input" placeholder="Código do Lobby" style="text-transform: uppercase;">
+                    <button class="action-button" id="join-lobby-button">Entrar</button>
+                </div>
+                <div class="lobby-box">
+                    <h2>Criar um Novo Lobby</h2>
+                    <button class="action-button" id="create-lobby-button">Criar</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="game-wrapper">
+            <div id="lobby-info">
+                <h2 id="lobby-code-display"></h2>
+                <h3>Jogadores Conectados</h3>
+                <ul id="player-list"></ul>
+            </div>
+            
+            <div id="dice-game" class="game-area">
+                <h2>Aposta no Dado Mais Alto</h2>
+                <button class="action-button" id="start-game-button">Iniciar Rodada</button>
+                <div id="game-status">Pressione "Iniciar Rodada" para começar!</div>
+                
+                <div id="bet-controls" style="display: none;">
+                    <input type="number" id="bet-amount-input" placeholder="Valor da aposta">
+                    <button class="action-button" id="place-bet-button">Apostar</button>
+                </div>
+                
+                <div id="results-area"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const socket = io();
+
+            // Elementos de UI
+            const lobbyScreen = document.getElementById('lobby-screen');
+            const gameWrapper = document.getElementById('game-wrapper');
+            const playerNameInput = document.getElementById('player-name-input');
+            const createLobbyButton = document.getElementById('create-lobby-button');
+            const joinLobbyButton = document.getElementById('join-lobby-button');
+            const joinCodeInput = document.getElementById('join-code-input');
+            const lobbyCodeDisplay = document.getElementById('lobby-code-display');
+            const playerList = document.getElementById('player-list');
+            const startGameButton = document.getElementById('start-game-button');
+            const gameStatus = document.getElementById('game-status');
+            const betControls = document.getElementById('bet-controls');
+            const betAmountInput = document.getElementById('bet-amount-input');
+            const placeBetButton = document.getElementById('place-bet-button');
+            const resultsArea = document.getElementById('results-area');
+
+            // --- Lógica de Eventos do Cliente ---
+            createLobbyButton.addEventListener('click', () => {
+                const name = playerNameInput.value;
+                if (name) socket.emit('createLobby', { name });
+            });
+
+            joinLobbyButton.addEventListener('click', () => {
+                const name = playerNameInput.value;
+                const lobbyCode = joinCodeInput.value;
+                if (name && lobbyCode) socket.emit('joinLobby', { name, lobbyCode });
+            });
+
+            startGameButton.addEventListener('click', () => socket.emit('startGame'));
+            placeBetButton.addEventListener('click', () => socket.emit('placeBet', betAmountInput.value));
+
+            // --- Ouvindo Eventos do Servidor ---
+            socket.on('lobbyError', (message) => alert(`Erro: ${message}`));
+
+            socket.on('updateLobbyState', (lobby) => {
+                lobbyScreen.style.display = 'none';
+                gameWrapper.style.display = 'block';
+
+                // Atualiza código do lobby e lista de jogadores/saldos
+                lobbyCodeDisplay.textContent = `Código do Lobby: ${lobby.code}`;
+                playerList.innerHTML = '';
+                lobby.players.forEach(player => {
+                    const playerElement = document.createElement('li');
+                    playerElement.innerHTML = `${player.name} <span class="player-balance">$${player.balance}</span>`;
+                    playerList.appendChild(playerElement);
+                });
+
+                // Atualiza estado do jogo de dados
+                resultsArea.innerHTML = '';
+                const amITheHost = lobby.players.length > 0 && lobby.players[0].id === socket.id;
+                startGameButton.style.display = (amITheHost && !lobby.game.active) ? 'inline-block' : 'none';
+
+                if (lobby.game.active) {
+                    gameStatus.textContent = `Apostas abertas! Tempo restante: ${lobby.game.timer}s`;
+                    const myBet = lobby.game.bets[socket.id];
+                    betControls.style.display = 'block';
+                    placeBetButton.disabled = !!myBet;
+                    betAmountInput.disabled = !!myBet;
+                    if(myBet) {
+                        betAmountInput.value = myBet;
+                    } else {
+                        betAmountInput.value = '';
+                    }
+                } else {
+                    gameStatus.textContent = amITheHost ? 'Pressione "Iniciar Rodada" para começar!' : 'Aguardando o Host iniciar a rodada...';
+                    betControls.style.display = 'none';
+
+                    // Mostra os resultados da rodada anterior
+                    if (Object.keys(lobby.game.rolls).length > 0) {
+                        let resultText = '';
+                        let winnerText = '';
+
+                        // Encontra vencedores e a maior rolagem
+                        let highestRoll = 0;
+                        for(const playerId in lobby.game.rolls) {
+                            if(lobby.game.rolls[playerId] > highestRoll) {
+                                highestRoll = lobby.game.rolls[playerId];
+                            }
+                        }
+                        const winners = Object.keys(lobby.game.rolls).filter(id => lobby.game.rolls[id] === highestRoll);
+
+                        if(winners.length > 1) {
+                            const winnerNames = winners.map(id => lobby.players.find(p => p.id === id).name);
+                            winnerText = `<h3>Empate entre ${winnerNames.join(', ')} com um ${highestRoll}!</h3>`;
+                        } else {
+                            const winnerName = lobby.players.find(p => p.id === winners[0]).name;
+                            winnerText = `<h3>${winnerName} venceu a rodada com um ${highestRoll}!</h3>`;
+                        }
+
+                        // Monta o texto de cada rolagem
+                        for(const playerId in lobby.game.rolls) {
+                            const player = lobby.players.find(p => p.id === playerId);
+                            if(player) {
+                                const roll = lobby.game.rolls[playerId];
+                                resultText += `<div class="roll-result">${player.name} rolou um ${roll}</div>`;
+                            }
+                        }
+                        resultsArea.innerHTML = winnerText + resultText;
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
